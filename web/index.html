@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NetScope</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='5' fill='%231f6feb'/%3E%3Ccircle cx='5' cy='6' r='3' fill='%2316a34a'/%3E%3Ccircle cx='27' cy='7' r='3' fill='%2316a34a'/%3E%3Ccircle cx='26' cy='26' r='3' fill='%23d97706'/%3E%3Ccircle cx='6' cy='25' r='3' fill='%2316a34a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+<script src="vendor/cytoscape.min.js"></script>
+<script src="vendor/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="shell">
+  <nav class="rail" aria-label="Main">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><circle cx="16" cy="16" r="5" fill="var(--accent)"/><g stroke="var(--line-strong)" stroke-width="1.6"><line x1="16" y1="16" x2="5" y2="6"/><line x1="16" y1="16" x2="27" y2="7"/><line x1="16" y1="16" x2="26" y2="26"/><line x1="16" y1="16" x2="6" y2="25"/></g><circle cx="5" cy="6" r="3" fill="var(--q-green)"/><circle cx="27" cy="7" r="3" fill="var(--q-green)"/><circle cx="26" cy="26" r="3" fill="var(--q-amber)"/><circle cx="6" cy="25" r="3" fill="var(--q-green)"/></svg>
+      <span>NetScope</span>
+    </div>
+    <span class="navgroup">Local network</span>
+    <a href="#dashboard" data-page="dashboard">Dashboard</a>
+    <a href="#map" data-page="map">Map</a>
+    <a href="#devices" data-page="devices">Devices <span class="pill" id="nav-new" hidden></span></a>
+    <a href="#tests" data-page="tests">Tests</a>
+    <a href="#history" data-page="history">History</a>
+    <span class="navgroup">Internet</span>
+    <a href="#paths" data-page="paths">Paths</a>
+    <a href="#dns" data-page="dns">DNS</a>
+    <span class="navgroup">This computer</span>
+    <a href="#traffic" data-page="traffic">Traffic <span class="rec" id="nav-rec" hidden title="Capture running"></span></a>
+    <a href="#connections" data-page="connections">Connections</a>
+    <span class="navgroup" aria-hidden="true"></span>
+    <a href="#settings" data-page="settings">Settings</a>
+    <div class="rail-foot">
+      <button class="ghost" id="theme-btn" type="button">Dark mode</button>
+      <span class="conn" id="conn" title="Live connection to the NetScope server">connecting</span>
+    </div>
+  </nav>
+
+  <main>
+    <header class="topbar">
+      <div class="netline" id="netline">Detecting network…</div>
+      <div class="bwline" id="bwline" title="This computer's current network speed"></div>
+      <div class="scanbox">
+        <div class="progress" id="scan-progress" hidden><div class="bar"><i id="scan-bar"></i></div><span id="scan-msg"></span></div>
+        <button class="primary" id="scan-btn" type="button">Scan network</button>
+      </div>
+    </header>
+
+    <!-- DASHBOARD -->
+    <section class="page" id="page-dashboard">
+      <div class="dash">
+        <div class="panel health">
+          <h2>Network health <button class="info" data-learn="health" aria-label="How the health score works">i</button></h2>
+          <div class="gauge"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="50" class="g-track"/><circle cx="60" cy="60" r="50" class="g-val" id="gauge-arc"/></svg><div class="g-num"><b id="health-num">–</b><span>/ 100</span></div></div>
+          <div class="counts" id="counts"></div>
+        </div>
+        <div class="panel netinfo">
+          <h2>Your network</h2>
+          <dl class="kv" id="netinfo"></dl>
+        </div>
+        <div class="panel mini-map">
+          <h2>Map <a href="#map" class="link">Open full map</a></h2>
+          <div id="cy-mini" class="cy"></div>
+          <div class="legend"><span><i class="q green"></i>Under 20 ms, under 1% loss</span><span><i class="q amber"></i>20–100 ms or 1–5% loss</span><span><i class="q red"></i>Over 100 ms or over 5% loss</span><span><i class="q grey"></i>Offline or not tested</span></div>
+        </div>
+        <div class="panel weakest">
+          <h2>Weakest links</h2>
+          <ol id="weakest" class="rows"></ol>
+        </div>
+        <div class="panel alerts">
+          <h2>Alerts <button class="ghost small" id="notif-btn" type="button">Enable notifications</button></h2>
+          <ul id="alerts" class="rows"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAP -->
+    <section class="page" id="page-map" hidden>
+      <div class="mapwrap">
+        <div class="mapmain">
+          <div class="maptools">
+            <div class="seg" role="group" aria-label="Layout">
+              <button type="button" data-layout="star" class="on">Star</button>
+              <button type="button" data-layout="grid">Grid</button>
+              <button type="button" data-layout="force">Force</button>
+            </div>
+            <button class="ghost" id="map-png" type="button">Export PNG</button>
+            <span class="hint">Line colour = latest ping quality · line thickness = measured TCP throughput</span>
+          </div>
+          <div id="cy-full" class="cy"></div>
+        </div>
+        <aside class="side" id="side">
+          <p class="empty">Select a device on the map to see its details and test it.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- DEVICES -->
+    <section class="page" id="page-devices" hidden>
+      <div class="panel">
+        <div class="tablebar">
+          <input type="search" id="dev-filter" placeholder="Filter by name, IP, MAC or vendor" aria-label="Filter devices">
+          <select id="dev-status" aria-label="Status filter"><option value="">All devices</option><option value="online">Online</option><option value="offline">Offline</option><option value="new">New</option><option value="agent">Agents</option></select>
+          <button class="ghost" id="dev-seen" type="button">Mark all as seen</button>
+          <a class="ghost btn" href="/api/report.csv">Download CSV</a>
+          <a class="ghost btn" href="/api/report.html" target="_blank" rel="noopener">Printable report</a>
+        </div>
+        <div class="tablescroll">
+          <table class="grid" id="dev-table">
+            <thead><tr>
+              <th data-sort="quality"></th><th data-sort="name">Device</th><th data-sort="ip">IP address</th><th data-sort="mac">MAC address</th>
+              <th data-sort="vendor">Vendor</th><th data-sort="type">Type</th><th data-sort="online">Status</th>
+              <th data-sort="lat" class="num">Latency <button class="info" data-learn="rtt" aria-label="About latency">i</button></th>
+              <th data-sort="jit" class="num">Jitter <button class="info" data-learn="jitter" aria-label="About jitter">i</button></th>
+              <th data-sort="loss" class="num">Loss <button class="info" data-learn="loss" aria-label="About packet loss">i</button></th>
+              <th data-sort="last_seen">Last seen</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="footnote">Phones often use a private (randomised) MAC address and stop answering pings while the screen is off. That is normal behaviour, not a fault. <button class="info" data-learn="mac" aria-label="About MAC addresses">i</button></p>
+      </div>
+    </section>
+
+    <!-- TESTS -->
+    <section class="page" id="page-tests" hidden>
+      <div class="tests">
+        <form class="panel testform" id="test-form">
+          <h2>Run a throughput test</h2>
+          <label>Test
+            <select name="kind">
+              <option value="tcp">TCP throughput</option>
+              <option value="udp">UDP: loss, jitter, out-of-order</option>
+              <option value="lul">Latency under load (bufferbloat)</option>
+            </select>
+          </label>
+          <div class="pair">
+            <label>From<select name="source"></select></label>
+            <label>To<select name="target"></select></label>
+          </div>
+          <label>Duration <output name="dur_out">10 s</output><input type="range" name="duration" min="3" max="30" value="10"></label>
+          <div class="opt opt-tcp opt-lul">
+            <label>Parallel TCP streams<select name="streams"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+          </div>
+          <div class="opt opt-tcp">
+            <label>Direction<select name="direction"><option value="up">From → To (upload)</option><option value="down">To → From (download)</option></select></label>
+          </div>
+          <div class="opt opt-udp">
+            <label>Target bitrate<select name="rate_mbps"><option value="10">10 Mbps</option><option value="50">50 Mbps</option><option value="100">100 Mbps</option><option value="200">200 Mbps</option><option value="500">500 Mbps</option></select></label>
+          </div>
+          <p class="kind-help" id="kind-help"></p>
+          <button class="primary" type="submit" id="test-run">Start test</button>
+          <p class="formerr" id="test-err" role="alert"></p>
+        </form>
+
+        <div class="panel live">
+          <h2 id="live-title">Live result</h2>
+          <div class="chartbox" id="live-box" hidden><canvas id="live-chart"></canvas></div>
+          <div class="result" id="live-result"><p class="empty">Results appear here once a test starts.</p></div>
+        </div>
+
+        <div class="panel agents">
+          <h2>Agents <button class="info" data-learn="agent" aria-label="About agents">i</button></h2>
+          <ul class="rows" id="agent-list"></ul>
+          <p class="small">To add a machine, copy <code>agent/agent.py</code> to it (needs only Python 3) and run:</p>
+          <pre class="cmd" id="agent-cmd"></pre>
+          <p class="small">Allow TCP 5600–5601 and UDP 5601 through the firewall on both machines.</p>
+        </div>
+
+        <div class="panel past">
+          <h2>Past tests</h2>
+          <div class="tablescroll"><table class="grid" id="test-table"><thead><tr><th>When</th><th>Test</th><th>Path</th><th>Result</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section class="page" id="page-history" hidden>
+      <div class="panel">
+        <div class="tablebar">
+          <select id="h-device" aria-label="Device"></select>
+          <select id="h-metric" aria-label="Metric"><option value="avg">Latency (avg ms)</option><option value="jitter">Jitter (ms)</option><option value="loss_pct">Packet loss (%)</option><option value="max">Latency (max ms)</option></select>
+          <div class="seg" role="group" aria-label="Range"><button type="button" data-range="hour" class="on">Hour</button><button type="button" data-range="day">Day</button><button type="button" data-range="week">Week</button></div>
+        </div>
+        <div class="chartbox tall"><canvas id="h-chart"></canvas></div>
+        <p class="footnote" id="h-note"></p>
+      </div>
+      <div class="panel" id="h-tests-panel" hidden>
+        <h2>Throughput for this device</h2>
+        <div class="chartbox"><canvas id="h-tput"></canvas></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="page-settings" hidden>
+      <form class="panel settings" id="settings-form">
+        <fieldset><legend>Scanning</legend>
+          <label>Automatic rescan every (minutes)<input type="number" name="scan_interval_min" min="1" max="1440"></label>
+          <label class="check"><input type="checkbox" name="check_ports"> Check common ports (22, 53, 80, 443, 445, 554, 631, 8080)</label>
+        </fieldset>
+        <fieldset><legend>Quality checks</legend>
+          <label>Background check every (seconds)<input type="number" name="ping_interval_s" min="15" max="3600"></label>
+          <label>Pings per background check<input type="number" name="bg_ping_count" min="1" max="20"></label>
+          <label>Pings per manual test<input type="number" name="ping_count" min="3" max="100"></label>
+        </fieldset>
+        <fieldset><legend>Quality thresholds</legend>
+          <label>Green below (ms)<input type="number" name="green_latency" step="1"></label>
+          <label>Red above (ms)<input type="number" name="amber_latency" step="1"></label>
+          <label>Green loss below (%)<input type="number" name="green_loss" step="0.5"></label>
+          <label>Red loss above (%)<input type="number" name="amber_loss" step="0.5"></label>
+        </fieldset>
+        <fieldset><legend>Agents and test ports</legend>
+          <label>Agent token<input type="text" name="token" minlength="6"></label>
+          <label>Control port (TCP)<input type="number" name="control_port"></label>
+          <label>Data port (TCP + UDP)<input type="number" name="data_port"></label>
+        </fieldset>
+        <fieldset><legend>Storage</legend>
+          <label>Keep history for (days)<input type="number" name="retention_days" min="1" max="365"></label>
+        </fieldset>
+        <div class="savebar"><button class="primary" type="submit">Save settings</button><span id="settings-msg" role="status"></span></div>
+      </form>
+    </section>
+
+    <!-- PATHS (traceroute) -->
+    <section class="page" id="page-paths" hidden>
+      <form class="panel tracebar" id="trace-form">
+        <label class="grow">Destination
+          <input name="target" placeholder="A website like google.com, or an IP address" autocomplete="off" spellcheck="false" required>
+        </label>
+        <div class="tracebtns">
+          <button class="primary" type="submit" id="trace-btn">Trace route</button>
+          <button class="ghost" type="button" id="trace-stop" hidden>Stop</button>
+        </div>
+        <div class="presets"><span>Try</span>
+          <button type="button" class="chip" data-target="google.com">google.com</button>
+          <button type="button" class="chip" data-target="github.com">github.com</button>
+          <button type="button" class="chip" data-target="wikipedia.org">wikipedia.org</button>
+          <button type="button" class="chip" data-target="1.1.1.1">1.1.1.1</button>
+          <button type="button" class="chip" data-target="amazon.com">amazon.com</button>
+        </div>
+        <p class="formerr" id="trace-err" role="alert"></p>
+      </form>
+      <div class="paths">
+        <div class="panel hopspanel">
+          <h2><span id="trace-title">Route</span> <button class="info" type="button" data-learn="traceroute" aria-label="How traceroute works">i</button></h2>
+          <p class="small muted" id="trace-status"></p>
+          <ol class="hops" id="hops"></ol>
+        </div>
+        <div class="pathside">
+          <div class="panel" id="trace-summary-panel">
+            <h2>Summary <button class="info" type="button" data-learn="asn" aria-label="About networks on the path">i</button></h2>
+            <div id="trace-summary"><p class="empty">Trace a route to see how many routers and networks your packets cross.</p></div>
+          </div>
+          <div class="panel">
+            <h2>Latency by hop</h2>
+            <div class="chartbox short"><canvas id="trace-chart"></canvas></div>
+          </div>
+          <div class="panel">
+            <h2>Recent traces</h2>
+            <ul class="rows" id="trace-recent"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DNS -->
+    <section class="page" id="page-dns" hidden>
+      <div class="dnsgrid">
+        <div class="panel bench">
+          <h2>Which DNS server is fastest for you? <button class="info" type="button" data-learn="dns" aria-label="About DNS caching">i</button></h2>
+          <p class="small">Each server gets 24 lookups of popular sites (answered from its cache) and 6 lookups of random names that can't be cached, which forces a full recursive lookup.</p>
+          <div class="resolvers" id="dns-resolvers"></div>
+          <div class="dnsrun">
+            <input id="dns-custom" placeholder="Add a DNS server IP, e.g. 94.140.14.14" inputmode="decimal" aria-label="Custom DNS server IP">
+            <button class="ghost" type="button" id="dns-add">Add</button>
+            <button class="primary" type="button" id="dns-run">Run benchmark</button>
+          </div>
+          <p class="formerr" id="dns-err" role="alert"></p>
+          <div id="dns-results"><p class="empty">Results appear here after a benchmark. It takes about 10–20 seconds.</p></div>
+        </div>
+        <div class="panel lookup">
+          <h2>Lookup inspector <button class="info" type="button" data-learn="dnspacket" aria-label="Inside a DNS packet">i</button></h2>
+          <form id="dns-lookup" class="lookupform">
+            <label class="grow">Name<input name="name" value="github.com" spellcheck="false" autocomplete="off" required></label>
+            <label>Type<select name="type"><option>A</option><option>AAAA</option><option>MX</option><option>NS</option><option>TXT</option><option>CNAME</option></select></label>
+            <label>Ask<select name="server" id="dns-server"></select></label>
+            <button class="primary" type="submit">Look up</button>
+          </form>
+          <div id="dns-lookup-out"><p class="empty">Look up a name to see the exact packet NetScope sends and the decoded reply.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRAFFIC -->
+    <section class="page" id="page-traffic" hidden>
+      <div class="traffic">
+        <div class="panel tnow">
+          <h2>This computer right now</h2>
+          <div class="bigrow" id="bw-now"></div>
+          <div class="chartbox"><canvas id="bw-chart"></canvas></div>
+        </div>
+        <div class="panel tcap">
+          <h2>Protocol breakdown <button class="info" type="button" data-learn="capture" aria-label="How capture works">i</button> <button class="info" type="button" data-learn="layers" aria-label="About OSI layers">i</button></h2>
+          <div class="capbar">
+            <button class="primary" type="button" id="cap-btn">Start capture</button>
+            <span id="cap-status" class="small"></span>
+          </div>
+          <p class="small muted">Captures only this computer's own traffic, headers only. Nothing is saved to disk. Stops by itself after 15 minutes.</p>
+          <p class="formerr" id="cap-err" role="alert"></p>
+          <div class="chartbox"><canvas id="proto-chart"></canvas></div>
+          <div class="tablescroll"><table class="grid" id="proto-table"><thead><tr><th>Protocol</th><th>Layer</th><th class="num">Packets</th><th class="num">Data</th><th>Share</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="panel tconv">
+          <h2>Who this computer is talking to</h2>
+          <div class="tablescroll"><table class="grid" id="conv-table"><thead><tr><th>Host</th><th>IP address</th><th>Where</th><th>Protocols</th><th class="num">Received</th><th class="num">Sent</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONNECTIONS -->
+    <section class="page" id="page-connections" hidden>
+      <div class="connwrap">
+        <div class="panel fsmpanel">
+          <h2>TCP state machine, live <button class="info" type="button" data-learn="tcpstates" aria-label="About TCP states">i</button> <button class="info" type="button" data-learn="timewait" aria-label="About TIME_WAIT">i</button></h2>
+          <svg id="fsm" viewBox="-110 0 830 660" role="img" aria-label="TCP state machine with live connection counts"></svg>
+          <p class="small muted">Each box shows how many of this computer's TCP connections are in that state right now. Click a state to filter the table.</p>
+        </div>
+        <div class="csum">
+          <div class="panel">
+            <h2>Right now</h2>
+            <div class="counts" id="conn-counts"></div>
+          </div>
+          <div class="panel">
+            <h2>Programs with the most connections</h2>
+            <ul class="rows" id="conn-procs"></ul>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="tablebar">
+          <input type="search" id="conn-filter" placeholder="Filter by program, host, IP or port" aria-label="Filter connections">
+          <select id="conn-state" aria-label="State filter"><option value="">All states</option></select>
+          <select id="conn-scope" aria-label="Remote filter"><option value="">Any remote</option><option value="internet">Internet</option><option value="local network">Local network</option><option value="this computer">This computer</option></select>
+          <span class="small muted" id="conn-shown"></span>
+        </div>
+        <div class="tablescroll"><table class="grid" id="conn-table"><thead><tr><th>Program</th><th>Remote host</th><th>Remote address</th><th>Service</th><th>Local port</th><th>State</th></tr></thead><tbody></tbody></table></div>
+        <p class="formerr" id="conn-err"></p>
+      </div>
+      <div class="panel">
+        <h2>Listening ports <button class="info" type="button" data-learn="listen" aria-label="About listening ports">i</button></h2>
+        <div class="tablescroll"><table class="grid" id="listen-table"><thead><tr><th>Port</th><th>Protocol</th><th>Service</th><th>Program</th><th>Who can connect</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="consent">
+  <h2>Before the first scan</h2>
+  <p>NetScope will look for devices on <b id="consent-net"></b> by sending ARP requests or pings to each address, and will check a few common ports.</p>
+  <p>Only scan networks you own or have permission to scan. On a college or office network, ask the network administrator first.</p>
+  <div class="dlg-actions"><button class="ghost" value="cancel" formmethod="dialog" type="button" id="consent-no">Cancel</button><button class="primary" type="button" id="consent-yes">I have permission, scan</button></div>
+</dialog>
+
+<dialog id="learn">
+  <h2 id="learn-title"></h2>
+  <div id="learn-body"></div>
+  <div class="dlg-actions"><button class="primary" type="button" id="learn-close">Close</button></div>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+<script src="learn.js"></script>
+<script src="learn2.js"></script>
+<script src="app.js"></script>
+<script src="features.js"></script>
+</body>
+</html>

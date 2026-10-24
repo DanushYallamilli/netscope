@@ -1,0 +1,7 @@
+fastapi>=0.110
+uvicorn>=0.29
+websockets>=12
+psutil>=5.9
+icmplib>=3.0
+scapy>=2.5
+pytest>=8
